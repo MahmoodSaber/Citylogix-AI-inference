@@ -29,6 +29,7 @@ class ModelAdapter(ABC):
         """
         self.model_path = Path(model_path)
         self.processor = processor
+        self._id2label: dict[int, str] | None = None  # Initialize to avoid AttributeError
 
         if not self.model_path.exists():
             raise FileNotFoundError(f"Model not found: {self.model_path}")

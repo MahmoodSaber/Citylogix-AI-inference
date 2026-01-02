@@ -223,12 +223,18 @@ class Predictor:
         for model_name, model in models.items():
             model_config = self.model_registry.get_model_config(model_name)
 
+            # Get num_classes - use from model or infer from predictions
+            num_classes = model.num_classes
+            if num_classes == 0:
+                logger.warning(f"Model '{model_name}' has no id2label mapping, inferring from config")
+                num_classes = len(model_config.classes) + 1  # +1 for background
+
             # Run inference
             predictions = model.run_inference(image_batch)
 
             # Convert to binary masks
             pred_array = np.array([p.cpu().numpy() for p in predictions])
-            binary_masks = segmentation_map_to_binary_masks(pred_array, model.num_classes)
+            binary_masks = segmentation_map_to_binary_masks(pred_array, num_classes)
             binary_masks = binary_masks.squeeze().numpy()
 
             # Add annotations for each class
@@ -271,6 +277,12 @@ class Predictor:
                 cropped_image, window_slide_h, window_slide_v, crop_size
             )
 
+            # Get num_classes - use from model or infer from config
+            num_classes = model.num_classes
+            if num_classes == 0:
+                logger.warning(f"Model '{model_name}' has no id2label mapping, inferring from config")
+                num_classes = len(model_config.classes) + 1  # +1 for background
+
             # Run inference on batches
             pred_semantic_maps = []
             for crop_batch in batch_array(crops, batch_size=batch_size):
@@ -284,12 +296,12 @@ class Predictor:
                 boxes,
                 cropped_height,
                 cropped_width,
-                model.num_classes,
+                num_classes,
             )
 
             # Convert to binary masks and pad back
             pred_mask_expanded = np.expand_dims(pred_mask, axis=0)
-            binary_masks = segmentation_map_to_binary_masks(pred_mask_expanded, model.num_classes)
+            binary_masks = segmentation_map_to_binary_masks(pred_mask_expanded, num_classes)
             binary_masks = binary_masks.squeeze().numpy()
 
             # Pad back to original size
@@ -343,18 +355,24 @@ class Predictor:
 
     def _save_outputs(self, coco_exporter: COCOExporter, output_path: Path) -> None:
         """Save all output formats."""
+        coco_json_path = None
+
         # Save COCO JSON
         if self.config.output.coco_json:
-            coco_path = coco_exporter.save("predictions.json")
+            coco_json_path = coco_exporter.save("predictions.json")
             coco_exporter.save_compressed("predictions_coco.tar.gz")
 
         # Save CVAT XML
         if self.config.output.cvat_xml:
             cvat_exporter = CVATExporter(output_path)
-            cvat_exporter.convert_from_coco(
-                coco_exporter.output_dir / "predictions.json",
-                "predictions.xml",
-            )
+            # CVAT needs COCO JSON - use saved file or convert from dict directly
+            if coco_json_path and coco_json_path.exists():
+                cvat_exporter.convert_from_coco(coco_json_path, "predictions.xml")
+            else:
+                # COCO JSON wasn't saved, convert directly from dict
+                cvat_exporter.convert_from_coco_dict(
+                    coco_exporter.to_dict(), "predictions.xml"
+                )
 
         # Save FiftyOne (optional)
         if self.config.output.fiftyone:
