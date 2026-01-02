@@ -27,16 +27,23 @@ def setup_logging(verbose: bool = False, log_file: Optional[Path] = None) -> Non
     # Remove default handler
     logger.remove()
 
-    # Console handler
+    # Console handler - clean format for users
     level = "DEBUG" if verbose else "INFO"
+    if verbose:
+        # Detailed format for debugging
+        fmt = "<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan> - <level>{message}</level>"
+    else:
+        # Clean format for normal use
+        fmt = "<level>{message}</level>"
+
     logger.add(
         sys.stderr,
-        format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+        format=fmt,
         level=level,
         colorize=True,
     )
 
-    # File handler (optional)
+    # File handler (optional) - always detailed
     if log_file:
         logger.add(
             log_file,
@@ -46,10 +53,44 @@ def setup_logging(verbose: bool = False, log_file: Optional[Path] = None) -> Non
         )
 
 
+def get_default_config_path() -> Optional[Path]:
+    """Get default config path if it exists."""
+    default_paths = [
+        Path("config/default.yaml"),
+        Path("config.yaml"),
+        Path.cwd() / "config" / "default.yaml",
+    ]
+    for path in default_paths:
+        if path.exists():
+            return path.resolve()
+    return None
+
+
+def prompt_for_path(prompt_text: str, must_exist: bool = True, is_dir: bool = True) -> Path:
+    """Prompt user for a path with validation."""
+    while True:
+        path_str = typer.prompt(prompt_text)
+        path = Path(path_str).resolve()
+
+        if must_exist and not path.exists():
+            typer.echo(f"Error: Path does not exist: {path}", err=True)
+            continue
+
+        if must_exist and is_dir and not path.is_dir():
+            typer.echo(f"Error: Path is not a directory: {path}", err=True)
+            continue
+
+        if must_exist and not is_dir and not path.is_file():
+            typer.echo(f"Error: Path is not a file: {path}", err=True)
+            continue
+
+        return path
+
+
 @app.command()
 def infer(
     project: Annotated[
-        Path,
+        Optional[Path],
         typer.Option(
             "--project",
             "-p",
@@ -59,9 +100,9 @@ def infer(
             dir_okay=True,
             resolve_path=True,
         ),
-    ],
+    ] = None,
     output: Annotated[
-        Path,
+        Optional[Path],
         typer.Option(
             "--output",
             "-o",
@@ -70,9 +111,9 @@ def infer(
             dir_okay=True,
             resolve_path=True,
         ),
-    ],
+    ] = None,
     config: Annotated[
-        Path,
+        Optional[Path],
         typer.Option(
             "--config",
             "-c",
@@ -82,7 +123,7 @@ def infer(
             dir_okay=False,
             resolve_path=True,
         ),
-    ],
+    ] = None,
     verbose: Annotated[
         bool,
         typer.Option(
@@ -118,64 +159,98 @@ def infer(
     Run inference on a project folder.
 
     \b
+    If project, output, or config paths are not provided, you will be prompted
+    to enter them interactively.
+
+    \b
     Example:
-        citylogix-infer -p /path/to/project -o /path/to/output -c config.yaml
+        citylogix-infer infer
+        citylogix-infer infer -p /path/to/project -o /path/to/output -c config.yaml
     """
+    # Interactive prompts for missing paths
+    if project is None:
+        project = prompt_for_path("Enter project folder path", must_exist=True, is_dir=True)
+
+    if output is None:
+        output = prompt_for_path("Enter output folder path", must_exist=False, is_dir=True)
+        # Create output directory if it doesn't exist
+        output.mkdir(parents=True, exist_ok=True)
+
+    if config is None:
+        default_config = get_default_config_path()
+        if default_config:
+            use_default = typer.confirm(f"Use default config ({default_config})?", default=True)
+            if use_default:
+                config = default_config
+            else:
+                config = prompt_for_path("Enter config file path", must_exist=True, is_dir=False)
+        else:
+            config = prompt_for_path("Enter config file path", must_exist=True, is_dir=False)
+
     setup_logging(verbose, log_file)
 
-    logger.info("=" * 60)
-    logger.info("Citylogix AI Inference")
-    logger.info("=" * 60)
-    logger.info(f"Project: {project}")
-    logger.info(f"Output:  {output}")
-    logger.info(f"Config:  {config}")
+    # Print header
+    typer.echo()
+    typer.secho("Citylogix AI Inference", fg=typer.colors.CYAN, bold=True)
+    typer.secho("=" * 40, fg=typer.colors.CYAN)
+    typer.echo(f"  Project: {project}")
+    typer.echo(f"  Output:  {output}")
+    typer.echo()
 
     # Load configuration
     try:
         inference_config = InferenceConfig.from_yaml(config)
     except Exception as e:
-        logger.error(f"Failed to load config: {e}")
+        typer.secho(f"Error: Failed to load config: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1)
 
-    # Apply CLI overrides
+    # Apply CLI overrides (silent unless verbose)
     if batch_size is not None:
         inference_config.defaults.batch_size = batch_size
-        logger.info(f"Override batch_size: {batch_size}")
+        if verbose:
+            logger.debug(f"Override batch_size: {batch_size}")
 
     if on_error is not None:
         if on_error not in ("skip", "stop"):
-            logger.error(f"Invalid --on-error value: {on_error}. Must be 'skip' or 'stop'.")
+            typer.secho(f"Error: Invalid --on-error value: {on_error}. Must be 'skip' or 'stop'.", fg=typer.colors.RED, err=True)
             raise typer.Exit(code=1)
         inference_config.error_handling.on_image_error = on_error
-        logger.info(f"Override on_error: {on_error}")
+        if verbose:
+            logger.debug(f"Override on_error: {on_error}")
 
     # Validate configuration
-    if not inference_config.models:
-        logger.error("No models configured. Check your config file.")
+    enabled_models = inference_config.get_enabled_models()
+    if not enabled_models:
+        typer.secho("Error: No models enabled. Check your config file.", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1)
 
-    logger.info(f"Models configured: {len(inference_config.models)}")
-    for model in inference_config.models:
-        logger.info(f"  - {model.name} ({model.mode}): {model.classes}")
+    # Show enabled models
+    model_names = [m.name for m in enabled_models]
+    typer.echo(f"  Models: {', '.join(model_names)}")
+    typer.echo()
 
     # Run inference
     try:
         with Predictor(inference_config) as predictor:
             stats = predictor.run(project, output)
 
-        logger.info("=" * 60)
-        logger.info("Inference Complete")
-        logger.info("=" * 60)
-        logger.info(f"Images processed: {stats['images_processed']}")
-        logger.info(f"Images skipped:   {stats['images_skipped']}")
-        logger.info(f"Annotations:      {stats['annotations']}")
-        logger.info(f"Output saved to:  {output}")
+        # Print summary
+        typer.echo()
+        typer.secho("Complete!", fg=typer.colors.GREEN, bold=True)
+        typer.secho("-" * 40, fg=typer.colors.GREEN)
+        typer.echo(f"  Images processed: {stats['images_processed']}")
+        typer.echo(f"  Images skipped:   {stats['images_skipped']}")
+        typer.echo(f"  Annotations:      {stats['annotations']}")
+        typer.echo(f"  Output: {output}")
+        typer.echo()
 
     except FileNotFoundError as e:
-        logger.error(f"File not found: {e}")
+        typer.secho(f"Error: File not found: {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1)
     except Exception as e:
-        logger.exception(f"Inference failed: {e}")
+        typer.secho(f"Error: Inference failed: {e}", fg=typer.colors.RED, err=True)
+        if verbose:
+            logger.exception("Full traceback:")
         raise typer.Exit(code=1)
 
 

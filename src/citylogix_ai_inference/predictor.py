@@ -4,6 +4,9 @@ Main predictor/orchestrator for running inference.
 Coordinates folder scanning, model loading, inference, and output generation.
 """
 
+import os
+import time
+import warnings
 from pathlib import Path
 from typing import Callable
 
@@ -26,6 +29,102 @@ from .processors.sliding_window import (
     crop_image_windows,
     pad_mask_top,
 )
+
+# Suppress PyTorch meshgrid warning
+warnings.filterwarnings("ignore", message=".*torch.meshgrid.*")
+
+
+def get_memory_usage() -> dict | None:
+    """Get current memory usage. Returns None if psutil not available."""
+    try:
+        import psutil
+    except ImportError:
+        return None
+
+    process = psutil.Process(os.getpid())
+    mem_info = process.memory_info()
+
+    result = {
+        "ram_used_gb": mem_info.rss / (1024**3),
+        "ram_percent": process.memory_percent(),
+    }
+
+    # GPU memory if available
+    if torch.cuda.is_available():
+        result["gpu_used_gb"] = torch.cuda.memory_allocated() / (1024**3)
+        result["gpu_total_gb"] = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+
+    return result
+
+
+def format_memory_status() -> str:
+    """Format memory status for display."""
+    try:
+        mem = get_memory_usage()
+        if mem is None:
+            return ""
+        status = f"RAM: {mem['ram_used_gb']:.1f}GB ({mem['ram_percent']:.0f}%)"
+        if "gpu_used_gb" in mem:
+            status += f" | GPU: {mem['gpu_used_gb']:.1f}/{mem['gpu_total_gb']:.1f}GB"
+        return status
+    except Exception:
+        return ""
+
+
+class ProgressTracker:
+    """Track and display detailed progress information."""
+
+    def __init__(self, total_images: int, num_models: int):
+        self.total_images = total_images
+        self.num_models = num_models
+        self.current_image = 0
+        self.current_stage = "Initializing"
+        self.start_time = time.time()
+        self.annotations_found = 0
+
+        # Create progress bar
+        self.pbar = tqdm(
+            total=total_images,
+            desc="Processing",
+            unit="img",
+            bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
+            dynamic_ncols=True,
+        )
+
+    def update(self, image_name: str, stage: str, annotations: int = 0):
+        """Update progress with current status."""
+        self.current_stage = stage
+        self.annotations_found += annotations
+
+        # Build status string
+        elapsed = time.time() - self.start_time
+        if self.current_image > 0:
+            avg_time = elapsed / self.current_image
+            status = f"{image_name[:25]} | {stage} | {avg_time:.1f}s/img"
+        else:
+            status = f"{image_name[:25]} | {stage}"
+
+        # Add memory info periodically (every 5 images)
+        if self.current_image % 5 == 0:
+            mem_status = format_memory_status()
+            if mem_status:
+                status += f" | {mem_status}"
+
+        self.pbar.set_postfix_str(status, refresh=True)
+
+    def next_image(self):
+        """Move to next image."""
+        self.current_image += 1
+        self.pbar.update(1)
+
+    def close(self):
+        """Close progress bar and print summary."""
+        self.pbar.close()
+        elapsed = time.time() - self.start_time
+
+        # Print summary
+        print(f"\nProcessed {self.total_images} images in {elapsed:.1f}s ({elapsed/max(1, self.total_images):.1f}s/img)")
+        print(f"Found {self.annotations_found} annotations")
 
 
 class Predictor:
@@ -55,7 +154,7 @@ class Predictor:
 
     def setup(self) -> None:
         """Load all models and prepare for inference."""
-        logger.info("Setting up predictor...")
+        import sys
 
         # Validate model paths
         errors = self.config.validate_models()
@@ -64,11 +163,15 @@ class Predictor:
                 logger.error(error)
             raise FileNotFoundError(f"Model validation failed: {len(errors)} errors")
 
-        # Load models
+        # Load models with progress indication
+        enabled_models = self.config.get_enabled_models()
+        print(f"Loading {len(enabled_models)} model(s)...", end=" ", flush=True)
+
         self.model_registry = ModelRegistry(self.config)
         self.model_registry.load_all_models()
 
-        logger.info(f"Predictor ready with {len(self.model_registry)} models")
+        print("done", flush=True)
+        logger.debug(f"Predictor ready with {len(self.model_registry)} models")
 
     def run(
         self,
@@ -99,14 +202,16 @@ class Predictor:
         images = scanner.scan()
 
         if not images:
-            logger.warning(f"No images found in {project_path}")
+            print("No images found.")
             return {"images_processed": 0, "images_skipped": 0, "annotations": 0}
+
+        print(f"Found {len(images)} images")
 
         # Validate images
         valid_images, invalid_images = self._validate_images(images)
 
         if invalid_images:
-            logger.warning(f"Skipping {len(invalid_images)} invalid images")
+            print(f"Skipping {len(invalid_images)} invalid images")
 
         # Initialize exporter
         coco_exporter = COCOExporter(output_path)
@@ -125,7 +230,7 @@ class Predictor:
         # Add validation stats
         stats["images_skipped"] = len(invalid_images)
 
-        logger.info(
+        logger.debug(
             f"Inference complete: {stats['images_processed']} processed, "
             f"{stats['images_skipped']} skipped, {stats['annotations']} annotations"
         )
@@ -165,12 +270,20 @@ class Predictor:
         # Get models by mode
         macro_models = self.model_registry.get_models_by_mode("macro")
         sliding_window_models = self.model_registry.get_models_by_mode("sliding_window")
+        num_models = len(macro_models) + len(sliding_window_models)
 
-        logger.info(f"Processing {total} images with {len(macro_models)} macro models and {len(sliding_window_models)} sliding window models")
+        logger.debug(f"Processing with {len(macro_models)} macro + {len(sliding_window_models)} sliding window models")
 
-        for idx, img_info in enumerate(tqdm(images, desc="Processing images")):
+        # Initialize progress tracker
+        progress = ProgressTracker(total, num_models)
+
+        for idx, img_info in enumerate(images):
+            image_name = img_info.path.name
+            img_annotations = 0
+
             try:
-                # Add image to COCO
+                # Stage 1: Load image
+                progress.update(image_name, "Loading")
                 pil_image = self.image_loader.load(img_info.path)
                 width, height = pil_image.size
 
@@ -181,25 +294,36 @@ class Predictor:
                     height=height,
                 )
 
-                # Process with macro models (full image)
+                # Stage 2: Process with macro models (full image)
                 if macro_models:
-                    annotations_count += self._process_macro_models(
+                    progress.update(image_name, "Macro inference")
+                    img_annotations += self._process_macro_models(
                         idx, pil_image, macro_models, coco_exporter
                     )
 
-                # Process with sliding window models
+                # Stage 3: Process with sliding window models
                 if sliding_window_models:
-                    annotations_count += self._process_sliding_window_models(
+                    progress.update(image_name, "Sliding window")
+                    img_annotations += self._process_sliding_window_models(
                         idx, pil_image, sliding_window_models, coco_exporter
                     )
+
+                annotations_count += img_annotations
+                progress.update(image_name, "Done", img_annotations)
+                progress.next_image()
 
                 if progress_callback:
                     progress_callback(idx + 1, total)
 
             except Exception as e:
                 logger.error(f"Error processing {img_info.path}: {e}")
+                progress.next_image()
                 if self.config.error_handling.on_image_error == "stop":
+                    progress.close()
                     raise
+
+        progress.annotations_found = annotations_count
+        progress.close()
 
         return {
             "images_processed": total,
@@ -223,11 +347,10 @@ class Predictor:
         for model_name, model in models.items():
             model_config = self.model_registry.get_model_config(model_name)
 
-            # Get num_classes - use from model or infer from predictions
+            # Get num_classes from model
             num_classes = model.num_classes
             if num_classes == 0:
-                logger.warning(f"Model '{model_name}' has no id2label mapping, inferring from config")
-                num_classes = len(model_config.classes) + 1  # +1 for background
+                raise ValueError(f"Model '{model_name}' has no num_classes defined. Check model checkpoint.")
 
             # Run inference
             predictions = model.run_inference(image_batch)
@@ -277,11 +400,10 @@ class Predictor:
                 cropped_image, window_slide_h, window_slide_v, crop_size
             )
 
-            # Get num_classes - use from model or infer from config
+            # Get num_classes from model
             num_classes = model.num_classes
             if num_classes == 0:
-                logger.warning(f"Model '{model_name}' has no id2label mapping, inferring from config")
-                num_classes = len(model_config.classes) + 1  # +1 for background
+                raise ValueError(f"Model '{model_name}' has no num_classes defined. Check model checkpoint.")
 
             # Run inference on batches
             pred_semantic_maps = []

@@ -37,19 +37,20 @@ class ModelRegistry:
 
     def load_all_models(self) -> dict[str, ModelAdapter]:
         """
-        Load all models from configuration.
+        Load all enabled models from configuration.
 
         Returns:
             Dictionary mapping model name to loaded model adapter.
         """
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        logger.info(f"Loading {len(self.config.models)} models on {device}...")
+        enabled_models = self.config.get_enabled_models()
+        logger.debug(f"Loading {len(enabled_models)} models on {device}")
 
-        for model_config in self.config.models:
+        for model_config in enabled_models:
             try:
                 model = self._load_model(model_config, device)
                 self._models[model_config.name] = model
-                logger.info(f"Loaded model '{model_config.name}' ({model_config.mode} mode)")
+                logger.debug(f"Loaded '{model_config.name}'")
             except Exception as e:
                 logger.error(f"Failed to load model '{model_config.name}': {e}")
                 raise
@@ -185,7 +186,7 @@ class ModelRegistry:
 
     def get_models_by_mode(self, mode: str) -> dict[str, ModelAdapter]:
         """
-        Get all models with a specific mode.
+        Get all enabled models with a specific mode.
 
         Args:
             mode: Processing mode ('macro' or 'sliding_window').
@@ -194,7 +195,7 @@ class ModelRegistry:
             Dictionary of model name to model adapter.
         """
         result = {}
-        for model_config in self.config.models:
+        for model_config in self.config.get_enabled_models():
             if model_config.mode == mode and model_config.name in self._models:
                 result[model_config.name] = self._models[model_config.name]
         return result
@@ -226,7 +227,7 @@ class ModelRegistry:
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-        logger.info("All models unloaded")
+        logger.debug("Models unloaded")
 
     def __len__(self) -> int:
         return len(self._models)

@@ -81,7 +81,7 @@ class FolderScanner:
         sessions = [d for d in self.project_path.iterdir() if d.is_dir()]
 
         if not sessions:
-            logger.warning(f"No session folders found in {self.project_path}")
+            logger.debug(f"No session folders found in {self.project_path}")
             return images
 
         for session_dir in sorted(sessions):
@@ -91,7 +91,7 @@ class FolderScanner:
             tasks = [d for d in session_dir.iterdir() if d.is_dir()]
 
             if not tasks:
-                logger.warning(f"No task folders found in session {session_name}")
+                logger.debug(f"No task folders in session {session_name}")
                 continue
 
             for task_dir in sorted(tasks):
@@ -101,10 +101,7 @@ class FolderScanner:
                 task_images = self._find_images_in_folder(task_dir, session_name, task_name)
                 images.extend(task_images)
 
-        logger.info(
-            f"Discovered {len(images)} images across "
-            f"{len(sessions)} sessions in {self.project_path}"
-        )
+        logger.debug(f"Found {len(images)} images in {len(sessions)} sessions")
 
         return images
 

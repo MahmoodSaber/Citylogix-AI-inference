@@ -92,6 +92,10 @@ class ModelAdapter(ABC):
     @property
     def num_classes(self) -> int:
         """Get number of classes."""
+        # First try from stored num_labels (set during model init)
+        if hasattr(self, 'num_labels') and self.num_labels > 0:
+            return self.num_labels
+        # Fall back to id2label length
         return len(self._id2label) if self._id2label else 0
 
 
@@ -165,7 +169,7 @@ def load_checkpoint(
     """
     from loguru import logger
 
-    logger.info(f"Loading checkpoint from {checkpoint_path}...")
+    logger.debug(f"Loading checkpoint: {checkpoint_path}")
 
     checkpoint = torch.load(checkpoint_path, map_location=device)
     pretrained_dict = checkpoint["model_state_dict"]
@@ -173,17 +177,21 @@ def load_checkpoint(
 
     # Filter out keys that do not match or have incompatible shapes
     filtered_pretrained_dict = {}
+    skipped_keys = []
     for k, v in pretrained_dict.items():
         if k in model_dict and v.shape == model_dict[k].shape:
             filtered_pretrained_dict[k] = v
         else:
-            logger.warning(f"Skipping key: {k}. Shape mismatch.")
+            skipped_keys.append(k)
+
+    if skipped_keys:
+        logger.debug(f"Skipped {len(skipped_keys)} keys with shape mismatch")
 
     # Overwrite entries in the existing state dict
     model_dict.update(filtered_pretrained_dict)
     model.load_state_dict(model_dict)
 
-    logger.info(f"Checkpoint loaded successfully from {checkpoint_path}")
+    logger.debug(f"Checkpoint loaded: {Path(checkpoint_path).name}")
 
     # Return id2label if available
     id2label = checkpoint.get("id2label", None)

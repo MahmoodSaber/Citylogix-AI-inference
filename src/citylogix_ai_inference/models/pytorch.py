@@ -4,6 +4,8 @@ PyTorch model adapter for OneFormer.
 Ported from streetscan_segmentation/model_tools.py
 """
 
+import logging
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -65,15 +67,26 @@ class PyTorchModel(ModelAdapter):
         Returns:
             Loaded PyTorch model.
         """
-        logger.info(f"Loading PyTorch model from {self.model_base_path}...")
+        logger.debug(f"Loading model from {self.model_base_path}")
 
-        model = AutoModelForUniversalSegmentation.from_pretrained(
-            self.model_base_path,
-            is_training=True,
-            ignore_mismatched_sizes=True,
-            num_labels=self.num_labels,
-            dropout=0,
-        )
+        # Suppress HuggingFace/transformers warnings about mismatched sizes
+        # These are expected when using custom checkpoints with different num_labels
+        transformers_logger = logging.getLogger("transformers.modeling_utils")
+        original_level = transformers_logger.level
+        transformers_logger.setLevel(logging.ERROR)
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            model = AutoModelForUniversalSegmentation.from_pretrained(
+                self.model_base_path,
+                is_training=True,
+                ignore_mismatched_sizes=True,
+                num_labels=self.num_labels,
+                dropout=0,
+            )
+
+        # Restore logging level
+        transformers_logger.setLevel(original_level)
 
         # Load checkpoint weights
         self._id2label = load_checkpoint(
@@ -85,7 +98,7 @@ class PyTorchModel(ModelAdapter):
         model.to(self.device)
         model.eval()
 
-        logger.info(f"Model loaded on {self.device}")
+        logger.debug(f"Model loaded on {self.device}")
 
         return model
 
