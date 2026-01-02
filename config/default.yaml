@@ -1,0 +1,113 @@
+# Citylogix AI Inference Configuration
+# =====================================
+#
+# This is the default configuration file for running inference on
+# road/pavement images using multiple segmentation models.
+
+# Default processing parameters
+defaults:
+  processor_size: 800           # Model input size (OneFormer default)
+  crop_top: 1360                # Pixels to crop from top (dashcam removal)
+  crop_size: 400                # Sliding window crop size
+  window_slide_h: -1            # Horizontal slide step (-1 = same as crop_size)
+  window_slide_v: -1            # Vertical slide step (-1 = same as crop_size)
+  batch_size: 5                 # Batch size for inference
+  min_image_width: 1024         # Minimum image width
+  min_image_height: 2024        # Minimum image height
+
+# Supported image file patterns
+image_patterns:
+  - "*.jpg"
+  - "*.jpeg"
+  - "*.png"
+  - "*.JPG"
+  - "*.JPEG"
+  - "*.PNG"
+
+# Image normalization (ImageNet defaults)
+normalization:
+  mean: [0.485, 0.456, 0.406]
+  std: [0.229, 0.224, 0.225]
+
+# Output format configuration
+output:
+  coco_json: true               # Export COCO JSON format
+  cvat_xml: true                # Export CVAT XML format
+  fiftyone: false               # Export FiftyOne dataset (optional)
+
+# Error handling
+error_handling:
+  on_image_error: skip          # "skip" to continue, "stop" to halt
+
+# Model registry
+# ==============
+# Each model processes images and detects specific classes.
+#
+# Modes:
+#   - macro: Full image inference (no sliding window)
+#   - sliding_window: Crop + sliding window + voting
+#
+# separate: true = use connected components to split instances
+#
+# Example configuration with 6 models:
+
+models:
+  # Macro models (full image inference)
+  - name: alligator
+    path: /path/to/models/alligator_model.pt
+    classes:
+      - Alligator cracking
+    mode: macro
+    separate: true
+
+  - name: block
+    path: /path/to/models/block_model.pt
+    classes:
+      - Block cracking
+    mode: macro
+    separate: true
+
+  - name: patches
+    path: /path/to/models/patches_model.pt
+    classes:
+      - Patches
+    mode: macro
+    separate: true
+
+  - name: potholes
+    path: /path/to/models/potholes_model.pt
+    classes:
+      - Potholes
+    mode: macro
+    separate: true
+
+  # Sliding window models (cropped inference with voting)
+  - name: cracks
+    path: /path/to/models/cracks_model.pt
+    classes:
+      - Cracks
+    mode: sliding_window
+    separate: false
+
+  - name: cracks_sealed
+    path: /path/to/models/cracks_sealed_model.pt
+    classes:
+      - Cracks sealed
+    mode: sliding_window
+    separate: false
+
+# Adding a new model (7th, 8th, etc.)
+# ===================================
+# Simply add another entry to the models list:
+#
+#   - name: new_model
+#     path: /path/to/new_model.pt
+#     classes:
+#       - New Class Name
+#     mode: macro  # or sliding_window
+#     separate: true  # or false
+#
+# Per-model overrides (optional):
+#     processor_size: 800  # Override default
+#     crop_top: 1200       # Override default
+#     crop_size: 500       # Override default

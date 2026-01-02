@@ -16,6 +16,7 @@ dependencies = [
     "loguru>=0.7",
     "numpy>=1.24",
     "tqdm>=4.66",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
@@ -24,6 +25,21 @@ dev = [
     "ruff>=0.1",
     "ipykernel>=6.0",
 ]
+
+onnx = [
+    "onnxruntime>=1.16",
+]
+
+onnx-gpu = [
+    "onnxruntime-gpu>=1.16",
+]
+
+fiftyone = [
+    "fiftyone>=0.23",
+]
+
+[project.scripts]
+citylogix-infer = "citylogix_ai_inference.cli:main"
 
 [build-system]
 requires = ["hatchling"]
