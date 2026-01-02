@@ -88,37 +88,37 @@ error_handling:
 models:
   # Macro models (full image inference)
   - name: alligator
-    path: /path/to/alligator_model.pt
+    path: models/alligator_model.pt
     classes: [Alligator cracking]
     mode: macro
     separate: true        # Connected components separation
 
   - name: block
-    path: /path/to/block_model.pt
+    path: models/block_model.pt
     classes: [Block cracking]
     mode: macro
     separate: true
 
   - name: patches
-    path: /path/to/patches_model.pt
+    path: models/patches_model.pt
     classes: [Patches]
     mode: macro
     separate: true
 
   - name: potholes
-    path: /path/to/potholes_model.pt
+    path: models/potholes_model.pt
     classes: [Potholes]
     mode: macro
     separate: true
 
   # Sliding window models (cropped inference with voting)
   - name: cracks
-    path: /path/to/cracks_model.pt
+    path: models/cracks_model.pt
     classes: [Cracks]
     mode: sliding_window
 
   - name: cracks_sealed
-    path: /path/to/cracks_sealed_model.pt
+    path: models/cracks_sealed_model.pt
     classes: [Cracks sealed]
     mode: sliding_window
 ```
@@ -225,13 +225,16 @@ Citylogix-AI-inference/
 ├── config/
 │   └── default.yaml              # Default configuration
 │
+├── models/                       # Model weights (.pt, .onnx files)
+│   └── *.pt                      # Place your model files here
+│
 ├── src/citylogix_ai_inference/
 │   ├── __init__.py
 │   ├── cli.py                    # Entry point (typer)
 │   ├── config.py                 # Pydantic config models
 │   ├── predictor.py              # Main orchestrator
 │   │
-│   ├── models/
+│   ├── adapters/                 # Model adapters (loading & inference)
 │   │   ├── __init__.py
 │   │   ├── base.py               # ModelAdapter base class
 │   │   ├── pytorch.py            # PyTorchModel (from model_tools.py)
@@ -307,8 +310,8 @@ citylogix-infer \
 
 | Source | Destination | Description |
 |--------|-------------|-------------|
-| `model_tools.py` → `PyTorchModel` | `models/pytorch.py` | PyTorch model loading & inference |
-| `model_tools.py` → `ONNXModel` | `models/onnx.py` | ONNX model loading & inference |
+| `model_tools.py` → `PyTorchModel` | `adapters/pytorch.py` | PyTorch model loading & inference |
+| `model_tools.py` → `ONNXModel` | `adapters/onnx.py` | ONNX model loading & inference |
 | `utils/tools.py` → `crop_image_windows` | `processors/sliding_window.py` | Sliding window cropping |
 | `utils/tools.py` → `assemble_crops_with_voting` | `processors/sliding_window.py` | Voting mechanism |
 | `utils/tools.py` → `batch_array` | `processors/sliding_window.py` | Batch array utility |

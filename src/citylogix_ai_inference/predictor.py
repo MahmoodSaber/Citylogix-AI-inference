@@ -19,7 +19,7 @@ from tqdm.auto import tqdm
 from .config import InferenceConfig, ModelConfig
 from .exporters.coco import COCOExporter, segmentation_map_to_binary_masks
 from .exporters.cvat import CVATExporter
-from .models.registry import ModelRegistry
+from .adapters.registry import ModelRegistry
 from .processors.folder_scanner import FolderScanner, ImageInfo
 from .processors.image_loader import ImageLoader, ImageValidationError
 from .processors.sliding_window import (

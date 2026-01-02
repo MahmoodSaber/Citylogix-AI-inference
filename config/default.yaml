@@ -54,28 +54,28 @@ error_handling:
 models:
   # Macro models (full image inference)
   - name: alligator
-    path: /path/to/models/alligator_model.pt
+    path: models/alligator_model.pt
     classes:
       - Alligator cracking
     mode: macro
     separate: true
 
   - name: block
-    path: /path/to/models/block_model.pt
+    path: models/block_model.pt
     classes:
       - Block cracking
     mode: macro
     separate: true
 
   - name: patches
-    path: /path/to/models/patches_model.pt
+    path: models/patches_model.pt
     classes:
       - Patches
     mode: macro
     separate: true
 
   - name: potholes
-    path: /path/to/models/potholes_model.pt
+    path: models/potholes_model.pt
     classes:
       - Potholes
     mode: macro
@@ -83,14 +83,14 @@ models:
 
   # Sliding window models (cropped inference with voting)
   - name: cracks
-    path: /path/to/models/cracks_model.pt
+    path: models/cracks_model.pt
     classes:
       - Cracks
     mode: sliding_window
     separate: false
 
   - name: cracks_sealed
-    path: /path/to/models/cracks_sealed_model.pt
+    path: models/cracks_sealed_model.pt
     classes:
       - Cracks sealed
     mode: sliding_window
