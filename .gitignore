@@ -45,9 +45,12 @@ htmlcov/
 *.pth
 *.onnx
 *.bin
-models/
+/models/
 data/
 outputs/
+
+# But not the source code models directory
+!src/citylogix_ai_inference/models/
 
 # Logs
 logs/
