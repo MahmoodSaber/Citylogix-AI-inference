@@ -13,7 +13,7 @@ This repository handles all inference operations for the Citylogix AI pipeline:
 
 ---
 
-## Current Status: `IN DEVELOPMENT`
+## Current Status: `FUNCTIONAL`
 
 ---
 
@@ -88,39 +88,41 @@ error_handling:
 models:
   # Macro models (full image inference)
   - name: alligator
-    path: models/alligator_model.pt
+    path: models/alligator-best_model.pt
     classes: [Alligator cracking]
     mode: macro
     separate: true        # Connected components separation
 
   - name: block
-    path: models/block_model.pt
+    path: models/block-best_model.pt
     classes: [Block cracking]
     mode: macro
     separate: true
 
   - name: patches
-    path: models/patches_model.pt
+    path: models/patch-best_model.pt
     classes: [Patches]
     mode: macro
     separate: true
 
   - name: potholes
-    path: models/potholes_model.pt
+    path: models/pot-best_model.pt
     classes: [Potholes]
     mode: macro
     separate: true
 
   # Sliding window models (cropped inference with voting)
   - name: cracks
-    path: models/cracks_model.pt
+    path: models/cracks-best_model.pt
     classes: [Cracks]
     mode: sliding_window
+    separate: false
 
   - name: cracks_sealed
-    path: models/cracks_sealed_model.pt
+    path: models/sealedcracksbest_model.pt
     classes: [Cracks sealed]
     mode: sliding_window
+    separate: false
 ```
 
 ### Processing Modes
@@ -158,61 +160,72 @@ models:
 
 ## TODO List
 
-### Phase 1: Core Infrastructure
+### Phase 1: Core Infrastructure ✅
 
-- [ ] **Configuration System**
-  - [ ] Pydantic models for config validation
-  - [ ] YAML config loader
-  - [ ] CLI argument overrides
-  - [ ] Early validation with clear error messages
+- [x] **Configuration System**
+  - [x] Pydantic models for config validation
+  - [x] YAML config loader
+  - [x] CLI argument overrides
+  - [x] Early validation with clear error messages
 
-- [ ] **Folder Scanner**
-  - [ ] Recursive traversal (Project → Session → Task → Images)
-  - [ ] Support configurable image patterns
-  - [ ] Validate minimum image size (1024x2024)
-  - [ ] Clear error messages for invalid inputs
+- [x] **Folder Scanner**
+  - [x] Recursive traversal (Project → Session → Task → Images)
+  - [x] Support configurable image patterns
+  - [x] Validate minimum image size (1024x2024)
+  - [x] Clear error messages for invalid inputs
 
-### Phase 2: Model Infrastructure
+### Phase 2: Model Infrastructure ✅
 
-- [ ] **Model Adapter**
-  - [ ] Port `PyTorchModel` from `model_tools.py`
-  - [ ] Port `ONNXModel` from `model_tools.py`
-  - [ ] Model registry for loading from config
-  - [ ] Support both macro and sliding_window modes
+- [x] **Model Adapter**
+  - [x] Port `PyTorchModel` from `model_tools.py`
+  - [x] Port `ONNXModel` from `model_tools.py`
+  - [x] Model registry for loading from config
+  - [x] Support both macro and sliding_window modes
 
-- [ ] **Image Processing**
-  - [ ] Port `crop_image_windows` from `utils/tools.py`
-  - [ ] Port `assemble_crops_with_voting` from `utils/tools.py`
-  - [ ] Port `batch_array` from `utils/tools.py`
-  - [ ] Make crop_top configurable (not hardcoded 1360)
+- [x] **Image Processing**
+  - [x] Port `crop_image_windows` from `utils/tools.py`
+  - [x] Port `assemble_crops_with_voting` from `utils/tools.py`
+  - [x] Port `batch_array` from `utils/tools.py`
+  - [x] Make crop_top configurable (not hardcoded 1360)
 
-### Phase 3: Inference Pipeline
+### Phase 3: Inference Pipeline ✅
 
-- [ ] **Predictor (Orchestrator)**
-  - [ ] Load all models from config
-  - [ ] Process images through all models
-  - [ ] Optimize: load image once, share across models
-  - [ ] Progress bars (tqdm) + logging
-  - [ ] Configurable error handling (skip/stop)
+- [x] **Predictor (Orchestrator)**
+  - [x] Load all models from config
+  - [x] Process images through all models
+  - [x] Optimize: load image once, share across models
+  - [x] Progress bars (tqdm) + logging
+  - [x] Configurable error handling (skip/stop)
 
-- [ ] **Output Exporters**
-  - [ ] COCO JSON with RLE encoding
-  - [ ] CVAT XML conversion
+- [x] **Output Exporters**
+  - [x] COCO JSON with RLE encoding
+  - [x] CVAT XML conversion
   - [ ] FiftyOne dataset (optional)
-  - [ ] Mirror input folder structure in output
+  - [x] Mirror input folder structure in output
 
-### Phase 4: CLI & Integration
+### Phase 4: CLI & Integration ✅
 
-- [ ] **CLI Entry Point**
-  - [ ] `citylogix-infer` command
-  - [ ] `--project`, `--output`, `--config` arguments
-  - [ ] Progress display and summary
+- [x] **CLI Entry Point**
+  - [x] `citylogix-infer` command
+  - [x] `--project`, `--output`, `--config` arguments
+  - [x] Progress display and summary
 
 - [ ] **Testing**
   - [ ] Config validation tests
   - [ ] Image loading tests
   - [ ] Model adapter tests
   - [ ] End-to-end inference test
+
+### Available Models (6 total)
+
+| Model | Classes | Mode | Epochs |
+|-------|---------|------|--------|
+| alligator | Alligator cracking | macro | 190 |
+| block | Block cracking | macro | 125 |
+| patches | Patches | macro | 120 |
+| potholes | Potholes | macro | 100 |
+| cracks | Cracks | sliding_window | 55 |
+| cracks_sealed | Cracks sealed | sliding_window | 10 |
 
 ---
 
@@ -264,25 +277,39 @@ Citylogix-AI-inference/
 
 ---
 
-## Usage (Planned)
+## Usage
 
 ```bash
+# Interactive mode (prompts for paths)
+python -m citylogix_ai_inference.cli infer
+
 # Basic usage with config file
-citylogix-infer \
+python -m citylogix_ai_inference.cli infer \
   --project /path/to/project_folder \
   --output /path/to/output \
   --config config/default.yaml
 
 # Short form
-citylogix-infer -p /path/to/project -o /path/to/output -c config.yaml
+python -m citylogix_ai_inference.cli infer -p /path/to/project -o /path/to/output
+
+# With verbose logging
+python -m citylogix_ai_inference.cli infer -p /path/to/project -o /path/to/output -v
+
+# With log file
+python -m citylogix_ai_inference.cli infer -p /path/to/project -o /path/to/output --log-file inference.log
 
 # With CLI overrides
-citylogix-infer \
+python -m citylogix_ai_inference.cli infer \
   --project /path/to/project \
   --output /path/to/output \
-  --config config.yaml \
   --batch-size 10 \
   --on-error skip
+
+# Validate config without running
+python -m citylogix_ai_inference.cli validate-config config/default.yaml
+
+# List images in a project
+python -m citylogix_ai_inference.cli list-images /path/to/project
 ```
 
 ---
