@@ -58,8 +58,6 @@ class PyTorchModel(ModelAdapter):
             self.model.config.num_queries - self.model.config.text_encoder_n_ctx
         )
 
-        self._id2label: dict[int, str] | None = None
-
     def load_model(self) -> torch.nn.Module:
         """
         Load the PyTorch model.
@@ -67,7 +65,9 @@ class PyTorchModel(ModelAdapter):
         Returns:
             Loaded PyTorch model.
         """
-        logger.debug(f"Loading model from {self.model_base_path}")
+        logger.debug(f"[PyTorchModel.load_model] START - Loading from {self.model_base_path}")
+        logger.debug(f"[PyTorchModel.load_model] Model path: {self.model_path}")
+        logger.debug(f"[PyTorchModel.load_model] Num labels: {self.num_labels}, Device: {self.device}")
 
         # Suppress HuggingFace/transformers warnings about mismatched sizes
         # These are expected when using custom checkpoints with different num_labels
@@ -75,6 +75,7 @@ class PyTorchModel(ModelAdapter):
         original_level = transformers_logger.level
         transformers_logger.setLevel(logging.ERROR)
 
+        logger.debug(f"[PyTorchModel.load_model] Initializing AutoModelForUniversalSegmentation from HuggingFace...")
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
             model = AutoModelForUniversalSegmentation.from_pretrained(
@@ -84,21 +85,25 @@ class PyTorchModel(ModelAdapter):
                 num_labels=self.num_labels,
                 dropout=0,
             )
+        logger.debug(f"[PyTorchModel.load_model] HuggingFace model initialized")
 
         # Restore logging level
         transformers_logger.setLevel(original_level)
 
         # Load checkpoint weights
+        logger.debug(f"[PyTorchModel.load_model] Loading checkpoint weights from {self.model_path}...")
         self._id2label = load_checkpoint(
             model=model,
             checkpoint_path=self.model_path,
             device=self.device,
         )
+        logger.debug(f"[PyTorchModel.load_model] Checkpoint weights loaded")
 
+        logger.debug(f"[PyTorchModel.load_model] Moving model to device: {self.device}...")
         model.to(self.device)
         model.eval()
 
-        logger.debug(f"Model loaded on {self.device}")
+        logger.debug(f"[PyTorchModel.load_model] DONE - Model loaded on {self.device}")
 
         return model
 
@@ -115,18 +120,23 @@ class PyTorchModel(ModelAdapter):
         batch_size = image_data.shape[0]
         height = image_data.shape[2]
         width = image_data.shape[3]
+        logger.debug(f"[PyTorchModel.preprocess] START - Batch: {batch_size}, Size: {width}x{height}")
 
+        logger.debug(f"[PyTorchModel.preprocess] Running processor on batch...")
         processed = self.processor(
             images=image_data,
             task_inputs=["semantic"] * batch_size,
             segmentation_maps=np.zeros((batch_size, height, width), dtype=np.uint8),
             return_tensors="pt",
         )
+        logger.debug(f"[PyTorchModel.preprocess] Processor completed")
 
         # Move tensors to device
+        logger.debug(f"[PyTorchModel.preprocess] Moving tensors to {self.device}...")
         processed = {
             k: v.to(self.device) for k, v in processed.items() if isinstance(v, torch.Tensor)
         }
+        logger.debug(f"[PyTorchModel.preprocess] DONE - Preprocessed {batch_size} images")
 
         return processed
 
@@ -162,13 +172,23 @@ class PyTorchModel(ModelAdapter):
         Returns:
             List of prediction masks.
         """
+        batch_size = input_data.shape[0]
         input_height = input_data.shape[2]
         input_width = input_data.shape[3]
+        logger.debug(f"[PyTorchModel.run_inference] START - Batch: {batch_size}, Size: {input_width}x{input_height}")
 
+        logger.debug(f"[PyTorchModel.run_inference] Preprocessing...")
         preprocessed = self.preprocess(input_data)
-        raw_output = self.model(**preprocessed)
 
-        return self.postprocess(raw_output, (input_height, input_width))
+        logger.debug(f"[PyTorchModel.run_inference] Running model forward pass...")
+        raw_output = self.model(**preprocessed)
+        logger.debug(f"[PyTorchModel.run_inference] Forward pass completed")
+
+        logger.debug(f"[PyTorchModel.run_inference] Postprocessing...")
+        result = self.postprocess(raw_output, (input_height, input_width))
+        logger.debug(f"[PyTorchModel.run_inference] DONE - Produced {len(result)} masks")
+
+        return result
 
 
 def load_class_map_from_checkpoint(model_path: str | Path) -> dict[int, str]:
