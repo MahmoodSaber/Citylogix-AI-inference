@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git clone:*)",
+      "Bash(rm:*)",
+      "Bash(python -m citylogix_ai_inference.cli infer:*)",
+      "Bash(dir:*)",
+      "Bash(python:*)",
+      "Bash(git push:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nRefactor predictor to output per-task COCO/CVAT files\n\nInstead of creating a single global output, the pipeline now:\n- Groups images by session/task hierarchy\n- Creates separate COCO JSON and CVAT XML per task folder\n- Outputs mirror input structure: output/session/task/predictions.*\n\nThis allows processing multiple sessions with hundreds of tasks\nwhile maintaining proper data isolation per task.\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(Get-ChildItem -Path \"D:\\\\QC_Montreal4\\\\dummy test results\\\\4thrun\" -Recurse)",
+      "Bash(Select-Object -First 100)",
+      "Bash(Format-Table FullName)"
+    ]
+  }
+}

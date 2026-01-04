@@ -169,13 +169,20 @@ def load_checkpoint(
     """
     from loguru import logger
 
-    logger.debug(f"Loading checkpoint: {checkpoint_path}")
+    logger.debug(f"[load_checkpoint] START - Loading checkpoint: {checkpoint_path}")
+    logger.debug(f"[load_checkpoint] Device: {device}")
 
+    logger.debug(f"[load_checkpoint] torch.load() - Loading checkpoint file...")
     checkpoint = torch.load(checkpoint_path, map_location=device)
+    logger.debug(f"[load_checkpoint] torch.load() complete")
+
+    logger.debug(f"[load_checkpoint] Extracting model_state_dict...")
     pretrained_dict = checkpoint["model_state_dict"]
     model_dict = model.state_dict()
+    logger.debug(f"[load_checkpoint] Pretrained keys: {len(pretrained_dict)}, Model keys: {len(model_dict)}")
 
     # Filter out keys that do not match or have incompatible shapes
+    logger.debug(f"[load_checkpoint] Filtering keys by shape compatibility...")
     filtered_pretrained_dict = {}
     skipped_keys = []
     for k, v in pretrained_dict.items():
@@ -184,18 +191,22 @@ def load_checkpoint(
         else:
             skipped_keys.append(k)
 
+    logger.debug(f"[load_checkpoint] Compatible keys: {len(filtered_pretrained_dict)}, Skipped: {len(skipped_keys)}")
     if skipped_keys:
-        logger.debug(f"Skipped {len(skipped_keys)} keys with shape mismatch")
+        logger.debug(f"[load_checkpoint] Skipped {len(skipped_keys)} keys with shape mismatch")
 
     # Overwrite entries in the existing state dict
+    logger.debug(f"[load_checkpoint] Updating model state dict...")
     model_dict.update(filtered_pretrained_dict)
+    logger.debug(f"[load_checkpoint] Loading state dict into model...")
     model.load_state_dict(model_dict)
 
-    logger.debug(f"Checkpoint loaded: {Path(checkpoint_path).name}")
+    logger.debug(f"[load_checkpoint] DONE - Checkpoint loaded: {Path(checkpoint_path).name}")
 
     # Return id2label if available
     id2label = checkpoint.get("id2label", None)
     if id2label:
         id2label = {int(k): v for k, v in id2label.items()}
+        logger.debug(f"[load_checkpoint] id2label loaded with {len(id2label)} classes")
 
     return id2label

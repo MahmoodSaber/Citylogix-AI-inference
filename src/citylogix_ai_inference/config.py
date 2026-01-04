@@ -143,3 +143,7 @@ class InferenceConfig(BaseModel):
             if not Path(model.path).exists():
                 errors.append(f"Model '{model.name}' path not found: {model.path}")
         return errors
+
+    def get_enabled_models(self) -> list[ModelConfig]:
+        """Get list of enabled models. Currently returns all models."""
+        return self.models

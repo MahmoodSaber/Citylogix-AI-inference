@@ -90,8 +90,10 @@ class COCOExporter:
             separate_instances: If True, separate connected components into individual annotations.
         """
         if mask.sum() == 0:
+            logger.debug(f"[COCOExporter.add_annotation] Skipping empty mask for category '{category_name}'")
             return
 
+        logger.debug(f"[COCOExporter.add_annotation] Adding annotation for image {image_id}, category '{category_name}', mask sum: {mask.sum()}")
         category_id = self.add_category(category_name)
 
         if separate_instances:
@@ -106,10 +108,12 @@ class COCOExporter:
         mask: np.ndarray,
     ) -> None:
         """Add a single annotation for the entire mask."""
+        logger.debug(f"[COCOExporter._add_single_annotation] Encoding mask with RLE...")
         encoded_mask = mask_utils.encode(np.asfortranarray(mask.astype(np.uint8)))
         encoded_mask["counts"] = encoded_mask["counts"].decode("ascii")
 
         bbox = mask_utils.toBbox(encoded_mask).tolist()
+        logger.debug(f"[COCOExporter._add_single_annotation] Annotation ID: {self._annotation_id}, bbox: {bbox}")
 
         self._annotations.append({
             "id": self._annotation_id,
@@ -130,9 +134,11 @@ class COCOExporter:
         mask: np.ndarray,
     ) -> None:
         """Separate connected components and add individual annotations."""
+        logger.debug(f"[COCOExporter._add_separated_annotations] Finding connected components...")
         num_labels, labels_im, stats, centroids = cv2.connectedComponentsWithStats(
             mask.astype(np.uint8), connectivity=8, ltype=cv2.CV_32S
         )
+        logger.debug(f"[COCOExporter._add_separated_annotations] Found {num_labels - 1} components (excluding background)")
 
         # Skip background (label 0)
         for label_num in range(1, num_labels):
@@ -173,10 +179,18 @@ class COCOExporter:
             Path to saved file.
         """
         output_path = self.output_dir / filename
+        logger.debug(f"[COCOExporter.save] START - Saving to {output_path}")
+        logger.debug(f"[COCOExporter.save] Stats: {len(self._images)} images, {len(self._annotations)} annotations, {len(self._categories)} categories")
+
+        logger.debug(f"[COCOExporter.save] Converting to dict...")
+        coco_dict = self.to_dict()
+
+        logger.debug(f"[COCOExporter.save] Writing JSON file...")
         with open(output_path, "w") as f:
-            json.dump(self.to_dict(), f)
+            json.dump(coco_dict, f)
 
         logger.info(f"Saved COCO JSON to {output_path}")
+        logger.debug(f"[COCOExporter.save] DONE")
         return output_path
 
     def save_compressed(self, filename: str = "predictions_coco.tar.gz") -> Path:
@@ -190,16 +204,20 @@ class COCOExporter:
             Path to saved file.
         """
         output_path = self.output_dir / filename
+        logger.debug(f"[COCOExporter.save_compressed] START - Saving to {output_path}")
 
         with tempfile.TemporaryDirectory() as tmpdir:
             json_path = Path(tmpdir) / "predictions.json"
+            logger.debug(f"[COCOExporter.save_compressed] Writing temp JSON...")
             with open(json_path, "w") as f:
                 json.dump(self.to_dict(), f)
 
+            logger.debug(f"[COCOExporter.save_compressed] Creating tarball...")
             with tarfile.open(output_path, "w:gz") as tar:
                 tar.add(json_path, arcname="predictions.json")
 
         logger.info(f"Saved compressed COCO to {output_path}")
+        logger.debug(f"[COCOExporter.save_compressed] DONE")
         return output_path
 
     def reset(self) -> None:

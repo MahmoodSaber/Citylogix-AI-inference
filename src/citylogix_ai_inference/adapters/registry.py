@@ -44,17 +44,20 @@ class ModelRegistry:
         """
         device = "cuda" if torch.cuda.is_available() else "cpu"
         enabled_models = self.config.get_enabled_models()
-        logger.debug(f"Loading {len(enabled_models)} models on {device}")
+        logger.debug(f"[ModelRegistry.load_all_models] START - Loading {len(enabled_models)} models on {device}")
 
-        for model_config in enabled_models:
+        for idx, model_config in enumerate(enabled_models):
             try:
+                logger.debug(f"[ModelRegistry.load_all_models] Loading model {idx + 1}/{len(enabled_models)}: '{model_config.name}'")
+                logger.debug(f"[ModelRegistry.load_all_models] Model path: {model_config.path}")
                 model = self._load_model(model_config, device)
                 self._models[model_config.name] = model
-                logger.debug(f"Loaded '{model_config.name}'")
+                logger.debug(f"[ModelRegistry.load_all_models] Successfully loaded '{model_config.name}'")
             except Exception as e:
-                logger.error(f"Failed to load model '{model_config.name}': {e}")
+                logger.error(f"[ModelRegistry.load_all_models] Failed to load model '{model_config.name}': {e}")
                 raise
 
+        logger.debug(f"[ModelRegistry.load_all_models] DONE - All {len(enabled_models)} models loaded")
         return self._models
 
     def _load_model(self, model_config: ModelConfig, device: str) -> ModelAdapter:
@@ -69,28 +72,39 @@ class ModelRegistry:
             Loaded model adapter.
         """
         model_path = Path(model_config.path)
+        logger.debug(f"[ModelRegistry._load_model] START - Loading '{model_config.name}' from {model_path}")
 
         # Get number of labels from checkpoint
+        logger.debug(f"[ModelRegistry._load_model] Getting num_labels from checkpoint...")
         num_labels = self._get_num_labels(model_path)
+        logger.debug(f"[ModelRegistry._load_model] num_labels: {num_labels}")
 
         # Create processor
+        logger.debug(f"[ModelRegistry._load_model] Creating OneFormerProcessor...")
         processor = self._create_processor(model_config, num_labels)
+        logger.debug(f"[ModelRegistry._load_model] Processor created")
 
         # Load model based on type
         if model_path.suffix == ".pt":
-            return PyTorchModel(
+            logger.debug(f"[ModelRegistry._load_model] Loading PyTorch model...")
+            model = PyTorchModel(
                 model_path=model_path,
                 processor=processor,
                 num_labels=num_labels,
                 device=device,
             )
+            logger.debug(f"[ModelRegistry._load_model] DONE - PyTorch model loaded")
+            return model
         elif model_path.suffix == ".onnx":
+            logger.debug(f"[ModelRegistry._load_model] Loading ONNX model...")
             providers = self._get_onnx_providers(device)
-            return ONNXModel(
+            model = ONNXModel(
                 model_path=model_path,
                 processor=processor,
                 providers=providers,
             )
+            logger.debug(f"[ModelRegistry._load_model] DONE - ONNX model loaded")
+            return model
         else:
             raise ValueError(f"Unsupported model format: {model_path.suffix}")
 
@@ -134,6 +148,11 @@ class ModelRegistry:
         """
         processor_size = self.config.get_model_config(model_config, "processor_size")
         norm = self.config.normalization
+        logger.debug(f"[ModelRegistry._create_processor] Creating processor with size={processor_size}, num_labels={num_labels}")
+
+        logger.debug(f"[ModelRegistry._create_processor] Loading CLIPTokenizerFast from 'shi-labs/oneformer_coco_swin_large'...")
+        tokenizer = CLIPTokenizerFast.from_pretrained("shi-labs/oneformer_coco_swin_large")
+        logger.debug(f"[ModelRegistry._create_processor] Tokenizer loaded")
 
         processor = OneFormerProcessor(
             image_processor=OneFormerImageProcessor(
@@ -145,12 +164,11 @@ class ModelRegistry:
                 num_labels=num_labels,
                 ignore_index=255,
             ),
-            tokenizer=CLIPTokenizerFast.from_pretrained(
-                "shi-labs/oneformer_coco_swin_large"
-            ),
+            tokenizer=tokenizer,
             num_labels=num_labels,
         )
 
+        logger.debug(f"[ModelRegistry._create_processor] OneFormerProcessor created")
         return processor
 
     def _get_onnx_providers(self, device: str) -> list[str]:

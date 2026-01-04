@@ -5,6 +5,7 @@ Ported from streetscan_segmentation/utils/tools.py
 """
 
 import numpy as np
+from loguru import logger
 from PIL import Image
 
 
@@ -29,6 +30,8 @@ def crop_image_windows(
         boxes: List of bounding boxes (x_min, y_min, x_max, y_max) for each crop.
     """
     width, height = image.size
+    logger.debug(f"[crop_image_windows] START - Image: {width}x{height}, crop_size: {crop_size}, slide_h: {window_size_h}, slide_v: {window_size_v}")
+
     crops: list[np.ndarray] = []
     boxes: list[tuple[int, int, int, int]] = []
 
@@ -62,6 +65,9 @@ def crop_image_windows(
     x_positions = sorted(list(set(x_positions)))
     y_positions = sorted(list(set(y_positions)))
 
+    total_windows = len(x_positions) * len(y_positions)
+    logger.debug(f"[crop_image_windows] Grid: {len(x_positions)} x {len(y_positions)} = {total_windows} windows")
+
     # Iterate over all positions to crop the image
     for y_min in y_positions:
         for x_min in x_positions:
@@ -82,6 +88,7 @@ def crop_image_windows(
             crops.append(crop_array)
             boxes.append(box)
 
+    logger.debug(f"[crop_image_windows] DONE - Generated {len(crops)} crops")
     return crops, boxes
 
 
@@ -108,8 +115,12 @@ def assemble_crops_with_voting(
     Raises:
         ValueError: If predictions and boxes don't match or have invalid coordinates.
     """
+    logger.debug(f"[assemble_crops_with_voting] START - {len(predictions)} predictions, image: {image_width}x{image_height}, classes: {num_classes}")
+
     # Initialize a vote count array with shape (image_height, image_width, num_classes)
+    logger.debug(f"[assemble_crops_with_voting] Allocating vote array: {image_height}x{image_width}x{num_classes}...")
     vote_counts = np.zeros((image_height, image_width, num_classes), dtype=np.int32)
+    logger.debug(f"[assemble_crops_with_voting] Vote array allocated")
 
     if len(predictions) != len(boxes):
         raise ValueError(
@@ -117,6 +128,7 @@ def assemble_crops_with_voting(
             f"Predictions: {len(predictions)}, Boxes: {len(boxes)}"
         )
 
+    logger.debug(f"[assemble_crops_with_voting] Accumulating votes from {len(predictions)} crops...")
     for idx, (pred, box) in enumerate(zip(predictions, boxes)):
         left, top, right, bottom = box
 
@@ -149,9 +161,11 @@ def assemble_crops_with_voting(
         # Accumulate the votes
         vote_counts[top:bottom, left:right, :] += one_hot.astype(np.int32)
 
+    logger.debug(f"[assemble_crops_with_voting] Computing argmax for final mask...")
     # Determine the class with the highest vote count for each pixel
     assembled_mask = np.argmax(vote_counts, axis=-1).astype(np.uint8)
 
+    logger.debug(f"[assemble_crops_with_voting] DONE - Assembled mask shape: {assembled_mask.shape}")
     return assembled_mask
 
 
@@ -212,6 +226,8 @@ def batch_array(array: list | np.ndarray, batch_size: int) -> list[np.ndarray]:
     Returns:
         A list of batches as numpy arrays.
     """
+    num_batches = (len(array) + batch_size - 1) // batch_size
+    logger.debug(f"[batch_array] Creating {num_batches} batches of size {batch_size} from {len(array)} items")
     return [np.array(array[i : i + batch_size]) for i in range(0, len(array), batch_size)]
 
 

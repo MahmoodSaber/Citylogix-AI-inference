@@ -50,23 +50,31 @@ class ImageLoader:
             FileNotFoundError: If image file not found
         """
         path = Path(path)
+        logger.debug(f"[ImageLoader.load] START - Loading image: {path.name}")
 
         if not path.exists():
+            logger.error(f"[ImageLoader.load] File not found: {path}")
             raise FileNotFoundError(f"Image not found: {path}")
 
         try:
+            logger.debug(f"[ImageLoader.load] Opening file with PIL...")
             image = Image.open(path).convert("RGB")
+            logger.debug(f"[ImageLoader.load] PIL Image.open() completed")
         except Exception as e:
+            logger.error(f"[ImageLoader.load] Failed to open image: {e}")
             raise ImageValidationError(f"Failed to open image {path}: {e}")
 
         # Validate size
         width, height = image.size
+        logger.debug(f"[ImageLoader.load] Image size: {width}x{height}")
         if width < self.min_width or height < self.min_height:
+            logger.warning(f"[ImageLoader.load] Image too small: {width}x{height} (min: {self.min_width}x{self.min_height})")
             raise ImageValidationError(
                 f"Image {path.name} is {width}x{height}, "
                 f"minimum required is {self.min_width}x{self.min_height}"
             )
 
+        logger.debug(f"[ImageLoader.load] DONE - Image loaded successfully: {path.name}")
         return image
 
     def load_as_array(self, path: Path | str) -> np.ndarray:
